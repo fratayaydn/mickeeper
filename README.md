@@ -9,28 +9,28 @@
 When AirPods or other Bluetooth headphones connect to a Mac, macOS makes them the microphone too. As soon as an app
 uses that microphone (a call, a Meet tab, dictation), the headphones switch to call mode and everything you hear
 turns mono and muffled. With an iPhone nearby, macOS may switch to its microphone instead. And apps like Zoom, Teams
-and Chrome change your microphone level on their own. MicKeeper keeps all of that in check.
+and Chrome change your microphone level on their own. MicKeeper switches the microphone back and, if you want,
+puts the level back too.
 
 ## What it does
 
-- **Keeps AirPods off the microphone.** When macOS switches the input to AirPods or other Bluetooth headphones (when
-  they connect, or go back in your ears), MicKeeper switches back to the microphone you were using, or the built-in
-  one. Your headphones stay high quality, and their battery lasts longer.
-- **Keeps an iPhone off the microphone.** The same when macOS picks a nearby or plugged-in iPhone's microphone. You
-  can still use the iPhone as a camera.
-- **Or always uses one microphone.** Pick a microphone in the list and MicKeeper uses it whenever it is connected.
-  Picking AirPods or an iPhone there is how to use them on purpose.
-- **Locks the level.** Optionally puts the microphone level back when an app changes it.
-- Shows the current microphone, its level, and how often MicKeeper stepped in.
+- When macOS switches the input to AirPods or other Bluetooth headphones (when they connect, or go back in your
+  ears), MicKeeper switches back to the microphone you were using, or the built-in one. Your headphones stay high
+  quality, and their battery lasts longer.
+- Same for an iPhone: if macOS picks a nearby or plugged-in iPhone's microphone, MicKeeper switches back. You can
+  still use the iPhone as a camera.
+- You can also pick one microphone in the list, and MicKeeper uses it whenever it is connected. That is also how to
+  use AirPods or an iPhone as the microphone on purpose.
+- Optionally puts the microphone level back when an app changes it.
+- The window shows the current microphone, its level, and how often MicKeeper stepped in.
 
-## Light
+## Resource use
 
-- **About 3 MB of memory, no CPU while idle.** Measured over 60 seconds idle with the kernel's own counters: not a
-  single instruction run.
-- **No polling, no timers.** It sleeps until macOS reports a microphone or level change.
-- **Nothing on screen.** No menu bar icon. The settings window runs only while you have it open.
-- **No permissions.** MicKeeper never listens to the microphone; it only changes which one is selected, and its
-  level.
+The agent uses about 3 MB of memory. It has no timers and doesn't poll; it sleeps until macOS reports a microphone
+or level change. Over 60 seconds idle, the kernel's own counters showed it ran no instructions at all.
+
+There is no menu bar icon, and the settings window only runs while it's open. MicKeeper needs no permissions
+because it never listens to the microphone. It only changes which one is selected, and its level.
 
 ## Good to know
 
@@ -62,9 +62,8 @@ open it and drag **MicKeeper** to **Applications**. The app is signed with a Dev
 
 ### First run
 
-Open **MicKeeper** and turn on **Enable MicKeeper**. It needs no permissions.
-
-The settings window is only for settings: close it and MicKeeper keeps running in the background.
+Open **MicKeeper** and turn on **Enable MicKeeper**. It needs no permissions. Close the window when you're done
+and MicKeeper keeps working in the background.
 
 ## How it works
 
@@ -111,6 +110,14 @@ removes the settings.
 ```sh
 /Applications/MicKeeper.app/Contents/MacOS/mickeeperd --status   # prints the current microphone and its level
 ```
+
+## More small Mac apps
+
+- [NightKeys](https://github.com/fratayaydn/nightkeys): keyboard backlight that only comes on when you type on the
+  built-in keyboard
+- [BalanceKeeper](https://github.com/fratayaydn/balancekeeper): puts the left/right audio balance back when macOS
+  shifts it
+- [CapsNow](https://github.com/fratayaydn/capsnow): turns off the Caps Lock delay, so quick taps register
 
 ## License
 
