@@ -29,6 +29,8 @@ puts the level back too.
 The agent uses about 3 MB of memory. It has no timers and doesn't poll; it sleeps until macOS reports a microphone
 or level change. Over 60 seconds idle, the kernel's own counters showed it ran no instructions at all.
 
+Measured on macOS 26.7.1 with `footprint` and `top`.
+
 There is no menu bar icon, and the settings window only runs while it's open. MicKeeper needs no permissions
 because it never listens to the microphone. It only changes which one is selected, and its level.
 
