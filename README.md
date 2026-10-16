@@ -102,8 +102,11 @@ update. To sign with your own Apple Developer ID instead:
 ## Uninstall
 
 Move **MicKeeper** from Applications to the Trash (or `brew uninstall --cask mickeeper`). The background agent
-notices, removes its login item and quits. If you built it from source, `make uninstall` in the cloned folder also
-removes the settings.
+notices, removes its login item and quits. Your settings are kept in case you install it again.
+
+To remove the settings too, use `brew uninstall --zap --cask mickeeper` instead, or run
+`defaults delete io.github.fratayaydn.mickeeper` after moving the app to the Trash. If you built it from source,
+`make uninstall` in the cloned folder removes both the app and the settings.
 
 ## Command line
 
