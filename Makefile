@@ -1,14 +1,15 @@
 # MicKeeper: `make` builds .build/MicKeeper.app (hidden, so Spotlight does not list the build copy), `make install` copies it to /Applications and opens it.
 # `make dmg` builds the disk image; `make release` builds, notarizes and staples it (Developer ID required).
-VERSION  := 1.0.0
+VERSION  := 1.0.1
 BUILD    ?= .build
 APP      := $(BUILD)/MicKeeper.app
 STAGE    := $(BUILD)/stage/MicKeeper.app
 CONTENTS := $(STAGE)/Contents
 AGENT_ID := io.github.fratayaydn.mickeeper.agent
+UPDATER_ID := io.github.fratayaydn.mickeeper.updater
 MIN_OS   := 13.0
 ARCH     := $(shell uname -m)
-CFLAGS   := -O2 -fobjc-arc -Wall -mmacosx-version-min=$(MIN_OS)
+CFLAGS   := -O2 -fobjc-arc -Wall -Werror -mmacosx-version-min=$(MIN_OS)
 
 # Code signing identity. The default is a self-signed certificate created once per Mac by
 # scripts/create-signing-identity.sh: a fixed signature keeps the login item working across rebuilds (an ad-hoc
@@ -29,10 +30,11 @@ RELEASE_IDENTITY ?=
 NOTARY_PROFILE   ?= notary
 DMG              := $(RELEASE_DIR)/MicKeeper-$(VERSION).dmg
 
-AGENT_SRC := Sources/Agent/mickeeperd.m
+AGENT_SRC := Sources/Agent/mickeeperd.m Sources/Agent/Updater.m
+AGENT_HEADERS := Sources/Agent/Updater.h
 APP_SRC   := Sources/App/MicKeeperApp.swift
 
-.PHONY: all clean install uninstall signing-identity release-app dmg release
+.PHONY: all test clean install uninstall signing-identity release-app dmg release updater-test-agent
 
 all: $(APP)
 
@@ -40,20 +42,26 @@ signing-identity:
 	@if [ "$(SIGN_IDENTITY)" = "Local Code Signing" ]; then ./scripts/create-signing-identity.sh "$(SIGN_IDENTITY)"; fi
 
 # signing-identity is order-only (after |): it must exist, but checking for it must not force a rebuild.
-$(APP): $(AGENT_SRC) $(APP_SRC) Resources/Info.plist Resources/$(AGENT_ID).plist $(wildcard Resources/AppIcon.icns) | signing-identity
+$(APP): $(AGENT_SRC) $(AGENT_HEADERS) $(APP_SRC) Resources/Info.plist Resources/$(AGENT_ID).plist Resources/$(UPDATER_ID).plist $(wildcard Resources/AppIcon.icns) | signing-identity
 	rm -rf $(STAGE)
-	mkdir -p $(CONTENTS)/MacOS $(CONTENTS)/Resources $(CONTENTS)/Library/LaunchAgents
-	clang $(CFLAGS) -framework Foundation -framework CoreAudio $(AGENT_SRC) \
+	mkdir -p $(BUILD)/module-cache $(CONTENTS)/MacOS $(CONTENTS)/Resources $(CONTENTS)/Library/LaunchAgents
+	clang $(CFLAGS) -framework Foundation -framework CoreAudio -framework Security $(AGENT_SRC) \
 		-o $(CONTENTS)/MacOS/mickeeperd
-	swiftc -O -swift-version 5 -parse-as-library -target $(ARCH)-apple-macos$(MIN_OS) \
+	swiftc -O -warnings-as-errors -module-cache-path $(BUILD)/module-cache -swift-version 5 -parse-as-library -target $(ARCH)-apple-macos$(MIN_OS) \
 		$(APP_SRC) -o $(CONTENTS)/MacOS/MicKeeper
 	sed -e 's/VERSION/$(VERSION)/' -e "s/BUILD_ID/$$(date +%Y%m%d%H%M%S)/" Resources/Info.plist > $(CONTENTS)/Info.plist
-	cp Resources/$(AGENT_ID).plist $(CONTENTS)/Library/LaunchAgents/
+	cp Resources/$(AGENT_ID).plist Resources/$(UPDATER_ID).plist $(CONTENTS)/Library/LaunchAgents/
 	if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns $(CONTENTS)/Resources/; fi
 	codesign $(SIGN_FLAGS) --identifier $(AGENT_ID) $(CONTENTS)/MacOS/mickeeperd
 	codesign $(SIGN_FLAGS) $(STAGE)
 	rm -rf $(APP)
 	mv $(STAGE) $(APP)
+
+updater-test-agent: $(BUILD)/mickeeperd-updater-test
+
+$(BUILD)/mickeeperd-updater-test: $(AGENT_SRC) $(AGENT_HEADERS)
+	mkdir -p $(BUILD)
+	clang $(CFLAGS) -DUPDATER_TEST_FEED -framework Foundation -framework CoreAudio -framework Security $(AGENT_SRC) -o $@
 
 # scripts/install.sh replaces the app and keeps the background agent working across updates.
 install: $(APP)
@@ -74,6 +82,7 @@ release: release-app
 uninstall:
 	-pkill -x MicKeeper
 	-/Applications/MicKeeper.app/Contents/MacOS/MicKeeper --unregister
+	-launchctl bootout gui/$$(id -u)/$(UPDATER_ID) 2>/dev/null
 	-launchctl bootout gui/$$(id -u)/$(AGENT_ID) 2>/dev/null
 	rm -rf /Applications/MicKeeper.app
 	defaults delete io.github.fratayaydn.mickeeper 2>/dev/null || true
@@ -81,3 +90,23 @@ uninstall:
 
 clean:
 	rm -rf .build
+
+# Tests use private fixtures and do not access the network or register login items.
+test: $(BUILD)/updater-tests $(BUILD)/updater-tool-tests $(BUILD)/notification-tests
+	$(BUILD)/updater-tests
+	$(BUILD)/updater-tool-tests
+	$(BUILD)/notification-tests
+
+# Updater policy checks use only private fixture folders and never call the network entry point.
+$(BUILD)/updater-tests: Sources/Agent/Updater.m Sources/Agent/Updater.h Tests/updater.m
+	mkdir -p $(BUILD)
+	clang $(CFLAGS) -framework Foundation -framework Security Tests/updater.m Sources/Agent/Updater.m -o $@
+
+$(BUILD)/updater-tool-tests: Sources/Agent/Updater.m Sources/Agent/Updater.h Tests/updater-tools.m
+	mkdir -p $(BUILD)
+	clang $(CFLAGS) -framework Foundation -framework Security Tests/updater-tools.m -o $@
+
+$(BUILD)/notification-tests: $(APP_SRC) Tests/notifications.swift
+	mkdir -p $(BUILD)/module-cache
+	swiftc -O -warnings-as-errors -module-cache-path $(BUILD)/module-cache -swift-version 5 -parse-as-library \
+		-target $(ARCH)-apple-macos$(MIN_OS) -DNOTIFICATION_TESTS $(APP_SRC) Tests/notifications.swift -o $@

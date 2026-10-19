@@ -23,6 +23,7 @@ puts the level back too.
   use AirPods or an iPhone as the microphone on purpose.
 - Optionally puts the microphone level back when an app changes it.
 - The window shows the current microphone, its level, and how often MicKeeper stepped in.
+- Updates itself from GitHub releases (see [Updates](#updates)).
 
 ## Resource use
 
@@ -31,8 +32,23 @@ or level change. Over 60 seconds idle, the kernel's own counters showed it ran n
 
 Measured on macOS 26.7.1: memory with `footprint`, CPU and wakeups with the kernel's `proc_pid_rusage` counters.
 
-There is no menu bar icon, and the settings window only runs while it's open. MicKeeper needs no permissions
-because it never listens to the microphone. It only changes which one is selected, and its level.
+A separate update check runs briefly once a day and after a restart, then exits.
+
+There is no menu bar icon, and the settings window only runs while it's open. MicKeeper never listens to
+the microphone. It only changes which one is selected, and its level.
+
+## Updates
+
+Once a day, and after a restart, MicKeeper asks GitHub for the latest release and installs it if it's
+newer. An update is only installed when it's signed with the same Developer ID and notarized by Apple. The disk
+image is checked before it's opened, and the app inside is checked again before it replaces the old one. The check
+also runs at the first login after a macOS update, in case a fix for that version is already out.
+
+The check is one request to `api.github.com` that sends only the app name and version. macOS asks once whether
+MicKeeper may show a notification after an update; you can change that later in **System Settings >
+Notifications**. Turn off **Install updates automatically** to get a notification instead and install from the
+window. Homebrew installs update themselves too. The cask is marked as auto-updating, so `brew upgrade` skips it
+unless you add `--greedy`.
 
 ## Good to know
 
@@ -64,8 +80,8 @@ open it and drag **MicKeeper** to **Applications**. The app is signed with a Dev
 
 ### First run
 
-Open **MicKeeper** and turn on **Enable MicKeeper**. It needs no permissions. Close the window when you're done
-and MicKeeper keeps working in the background.
+Open **MicKeeper** and turn on **Enable MicKeeper**. It needs no microphone permission. Close the window when
+you're done and MicKeeper keeps working in the background.
 
 ## How it works
 
@@ -78,7 +94,7 @@ and MicKeeper keeps working in the background.
 - With the level locked, it puts the input level back to the locked value when it changes.
 - Only the agent changes the input and its level; the window only saves settings, so the two never race.
 - It watches its app bundle through the kernel's event queue (no polling): when the app is replaced by an update it
-  restarts with the new version, and when the app is moved to the Trash it removes its login item and quits.
+  restarts with the new version, and when the app is moved to the Trash it removes both login items and quits.
 - `MicKeeper.app/Contents/MacOS/MicKeeper` is the SwiftUI settings window. It runs only while open.
 
 MicKeeper uses only public macOS APIs.
@@ -94,17 +110,17 @@ make install
 ```
 
 This builds `MicKeeper.app`, copies it to `/Applications` and opens it. To update, pull and run `make install`
-again.
+again. `make test` runs the updater and notification tests.
 
 Local builds are signed with a self-signed certificate that `scripts/create-signing-identity.sh` creates on the
-first build, so the login item keeps working across rebuilds; `scripts/install.sh` re-registers it after each
+first build, so the login items keep working across rebuilds; `scripts/install.sh` re-registers both after each
 update. To sign with your own Apple Developer ID instead:
 `make install SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"`.
 
 ## Uninstall
 
 Move **MicKeeper** from Applications to the Trash (or `brew uninstall --cask mickeeper`). The background agent
-notices, removes its login item and quits. Your settings are kept in case you install it again.
+notices, removes both login items and quits. Your settings are kept in case you install it again.
 
 To remove the settings too, use `brew uninstall --zap --cask mickeeper` instead, or run
 `defaults delete io.github.fratayaydn.mickeeper` after moving the app to the Trash. If you built it from source,
@@ -115,6 +131,9 @@ To remove the settings too, use `brew uninstall --zap --cask mickeeper` instead,
 ```sh
 /Applications/MicKeeper.app/Contents/MacOS/mickeeperd --status   # prints the current microphone and its level
 ```
+
+Run the agent with `--update-check --force` to check now, or add `--install` to install a newer release when
+automatic installation is off.
 
 ## More small Mac apps
 

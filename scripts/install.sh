@@ -11,9 +11,15 @@ BUILD="$1"
 APP=/Applications/MicKeeper.app
 CLI="$APP/Contents/MacOS/MicKeeper"
 JOB="gui/$(id -u)/io.github.fratayaydn.mickeeper.agent"
+UPDATER_JOB="gui/$(id -u)/io.github.fratayaydn.mickeeper.updater"
 
 wait_until_dropped() {
-    for i in $(seq 1 70); do launchctl print "$JOB" >/dev/null 2>&1 || return 0; sleep 0.5; done
+    for job in "$UPDATER_JOB" "$JOB"; do
+        for i in $(seq 1 70); do
+            launchctl print "$job" >/dev/null 2>&1 || break
+            sleep 0.5
+        done
+    done
 }
 
 agent_running() {

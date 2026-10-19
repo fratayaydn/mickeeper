@@ -12,6 +12,7 @@
 // SETTINGS_CHANGED_NOTIFICATION. Only this agent changes the input device and its level, so the two never race.
 #import <Foundation/Foundation.h>
 #import <CoreAudio/CoreAudio.h>
+#import "Updater.h"
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <mach-o/dyld.h>
@@ -31,6 +32,7 @@
 #define KEY_LEVEL_COUNT     CFSTR("LevelCount")
 #define KEY_LEVEL_LAST      CFSTR("LevelLast")
 #define AGENT_PLIST         @"io.github.fratayaydn.mickeeper.agent.plist"
+#define UPDATER_PLIST       @"io.github.fratayaydn.mickeeper.updater.plist"
 
 // ServiceManagement is loaded only when the app is removed, so it costs no memory while running.
 @interface NSObject (SMAppService)
@@ -340,9 +342,12 @@ static BOOL selfPath(char *path, uint32_t size) {
 // does not start another copy of MicKeeper at the next login.
 static void unregisterLoginItem(void) {
     if (!dlopen("/System/Library/Frameworks/ServiceManagement.framework/ServiceManagement", RTLD_NOW)) return;
-    NSError *error = nil;
-    if (![[NSClassFromString(@"SMAppService") agentServiceWithPlistName:AGENT_PLIST] unregisterAndReturnError:&error])
-        fprintf(stderr, "mickeeperd: could not remove the login item: %s\n", error.localizedDescription.UTF8String);
+    // Remove the updater first: unregistering the main job can stop this process immediately.
+    for (NSString *plist in @[UPDATER_PLIST, AGENT_PLIST]) {
+        NSError *error = nil;
+        if (![[NSClassFromString(@"SMAppService") agentServiceWithPlistName:plist] unregisterAndReturnError:&error])
+            fprintf(stderr, "mickeeperd: could not remove %s: %s\n", plist.UTF8String, error.localizedDescription.UTF8String);
+    }
 }
 
 // MicKeeper.app was moved to the Trash or replaced by an update. An update puts a new copy at the same path within
@@ -383,6 +388,15 @@ static void watchAppBundle(void) {
 
 int main(int argc, char **argv) {
     @autoreleasepool {
+        if (argc > 1 && !strcmp(argv[1], "--update-check")) {
+            BOOL force = NO, install = NO;
+            for (int i = 2; i < argc; i++) {
+                if (!strcmp(argv[i], "--force")) force = YES;
+                else if (!strcmp(argv[i], "--install")) install = YES;
+                else return 1;
+            }
+            return updaterRun(force, install);
+        }
         if (argc > 1 && !strcmp(argv[1], "--status")) {  // for scripts and debugging
             AudioDeviceID d = defaultInput();
             Float32 level;
