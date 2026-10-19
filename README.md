@@ -123,6 +123,8 @@ To remove the settings too, use `brew uninstall --zap --cask mickeeper` instead,
 - [BalanceKeeper](https://github.com/fratayaydn/balancekeeper): puts the left/right audio balance back when macOS
   shifts it
 - [CapsNow](https://github.com/fratayaydn/capsnow): turns off the Caps Lock delay, so quick taps register
+- [FullscreenKeeper](https://github.com/fratayaydn/fullscreenkeeper): reopens apps in full screen if you quit them in
+  full screen
 
 ## License
 
