@@ -10,6 +10,10 @@ UPDATER_ID := io.github.fratayaydn.mickeeper.updater
 MIN_OS   := 13.0
 ARCH     := $(shell uname -m)
 CFLAGS   := -O2 -fobjc-arc -Wall -Werror -mmacosx-version-min=$(MIN_OS)
+DIAGNOSTIC_LOG ?= 0
+ifeq ($(DIAGNOSTIC_LOG),1)
+AGENT_DIAGNOSTIC_FLAGS := -DMICKEEPER_DIAGNOSTIC_LOG
+endif
 
 # Code signing identity. The default is a self-signed certificate created once per Mac by
 # scripts/create-signing-identity.sh: a fixed signature keeps the login item working across rebuilds (an ad-hoc
@@ -31,25 +35,38 @@ NOTARY_PROFILE   ?= notary
 DMG              := $(RELEASE_DIR)/MicKeeper-$(VERSION).dmg
 
 AGENT_SRC := Sources/Agent/mickeeperd.m Sources/Agent/Updater.m
-AGENT_HEADERS := Sources/Agent/Updater.h
+AGENT_HEADERS := Sources/Agent/Updater.h Sources/Agent/DiagnosticLog.h
 APP_SRC   := Sources/App/MicKeeperApp.swift
 
-.PHONY: all test clean install uninstall signing-identity release-app dmg release updater-test-agent
+.PHONY: all test clean install uninstall signing-identity release-app dmg release updater-test-agent diagnostic release-logging-test FORCE
 
 all: $(APP)
+
+# Local troubleshooting build with an in-memory diagnostic log.
+diagnostic:
+	$(MAKE) DIAGNOSTIC_LOG=1 all
+
+FORCE:
+
+$(BUILD)/agent-build-mode: FORCE
+	@mkdir -p $(BUILD)
+	@if [ ! -f $@ ] || [ "$$(cat $@)" != "$(DIAGNOSTIC_LOG)" ]; then echo "$(DIAGNOSTIC_LOG)" > $@; fi
 
 signing-identity:
 	@if [ "$(SIGN_IDENTITY)" = "Local Code Signing" ]; then ./scripts/create-signing-identity.sh "$(SIGN_IDENTITY)"; fi
 
 # signing-identity is order-only (after |): it must exist, but checking for it must not force a rebuild.
-$(APP): $(AGENT_SRC) $(AGENT_HEADERS) $(APP_SRC) Resources/Info.plist Resources/$(AGENT_ID).plist Resources/$(UPDATER_ID).plist $(wildcard Resources/AppIcon.icns) | signing-identity
+$(APP): $(AGENT_SRC) $(AGENT_HEADERS) $(APP_SRC) Resources/Info.plist Resources/$(AGENT_ID).plist Resources/$(UPDATER_ID).plist $(wildcard Resources/AppIcon.icns) $(BUILD)/agent-build-mode Makefile | signing-identity
 	rm -rf $(STAGE)
 	mkdir -p $(BUILD)/module-cache $(CONTENTS)/MacOS $(CONTENTS)/Resources $(CONTENTS)/Library/LaunchAgents
-	clang $(CFLAGS) -framework Foundation -framework CoreAudio -framework Security $(AGENT_SRC) \
+	clang $(CFLAGS) $(AGENT_DIAGNOSTIC_FLAGS) -framework Foundation -framework CoreAudio -framework Security $(AGENT_SRC) \
 		-o $(CONTENTS)/MacOS/mickeeperd
 	swiftc -O -warnings-as-errors -module-cache-path $(BUILD)/module-cache -swift-version 5 -parse-as-library -target $(ARCH)-apple-macos$(MIN_OS) \
 		$(APP_SRC) -o $(CONTENTS)/MacOS/MicKeeper
 	sed -e 's/VERSION/$(VERSION)/' -e "s/BUILD_ID/$$(date +%Y%m%d%H%M%S)/" Resources/Info.plist > $(CONTENTS)/Info.plist
+ifeq ($(DIAGNOSTIC_LOG),1)
+	/usr/libexec/PlistBuddy -c 'Set :CFBundleVersion $(VERSION)d1' $(CONTENTS)/Info.plist
+endif
 	cp Resources/$(AGENT_ID).plist Resources/$(UPDATER_ID).plist $(CONTENTS)/Library/LaunchAgents/
 	if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns $(CONTENTS)/Resources/; fi
 	codesign $(SIGN_FLAGS) --identifier $(AGENT_ID) $(CONTENTS)/MacOS/mickeeperd
@@ -68,9 +85,10 @@ install: $(APP)
 	./scripts/install.sh $(APP)
 
 release-app:
+	@if [ "$(DIAGNOSTIC_LOG)" != "0" ]; then echo "Release builds require DIAGNOSTIC_LOG=0."; exit 1; fi
 	@if [ -z "$(RELEASE_IDENTITY)" ]; then echo "Set RELEASE_IDENTITY (see the Makefile)."; exit 1; fi
 	rm -rf $(RELEASE_DIR)
-	$(MAKE) BUILD=$(RELEASE_DIR) SIGN_IDENTITY="$(RELEASE_IDENTITY)" TIMESTAMP=--timestamp
+	$(MAKE) BUILD=$(RELEASE_DIR) SIGN_IDENTITY="$(RELEASE_IDENTITY)" TIMESTAMP=--timestamp DIAGNOSTIC_LOG=0 AGENT_DIAGNOSTIC_FLAGS=
 
 # Disk image only, without notarization: for checking the window layout.
 dmg: release-app
@@ -92,10 +110,24 @@ clean:
 	rm -rf .build
 
 # Tests use private fixtures and do not access the network or register login items.
-test: $(BUILD)/updater-tests $(BUILD)/updater-tool-tests $(BUILD)/notification-tests
+test: $(BUILD)/updater-tests $(BUILD)/updater-tool-tests $(BUILD)/notification-tests $(BUILD)/mickeeperd-diagnostic-check $(BUILD)/diagnostic-tests release-logging-test
 	$(BUILD)/updater-tests
 	$(BUILD)/updater-tool-tests
 	$(BUILD)/notification-tests
+	$(BUILD)/diagnostic-tests
+
+# Build a separate release copy without installing it or using a signing certificate.
+release-logging-test:
+	$(MAKE) BUILD=$(BUILD)/release-logging SIGN_IDENTITY=- TIMESTAMP= DIAGNOSTIC_LOG=0 AGENT_DIAGNOSTIC_FLAGS= all
+	sh Tests/release-logging.sh $(BUILD)/release-logging/MicKeeper.app/Contents/MacOS/*
+
+$(BUILD)/mickeeperd-diagnostic-check: $(AGENT_SRC) $(AGENT_HEADERS)
+	mkdir -p $(BUILD)
+	clang $(CFLAGS) -DMICKEEPER_DIAGNOSTIC_LOG -framework Foundation -framework CoreAudio -framework Security $(AGENT_SRC) -o $@
+
+$(BUILD)/diagnostic-tests: Sources/Agent/DiagnosticLog.h Tests/diagnostic.m
+	mkdir -p $(BUILD)
+	clang $(CFLAGS) -DMICKEEPER_DIAGNOSTIC_LOG -framework Foundation Tests/diagnostic.m -o $@
 
 # Updater policy checks use only private fixture folders and never call the network entry point.
 $(BUILD)/updater-tests: Sources/Agent/Updater.m Sources/Agent/Updater.h Tests/updater.m

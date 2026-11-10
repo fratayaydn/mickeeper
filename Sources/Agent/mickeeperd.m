@@ -13,6 +13,7 @@
 #import <Foundation/Foundation.h>
 #import <CoreAudio/CoreAudio.h>
 #import "Updater.h"
+#import "DiagnosticLog.h"
 #include <dlfcn.h>
 #include <fcntl.h>
 #include <mach-o/dyld.h>
@@ -219,7 +220,7 @@ static void savePendingCounts(void) {
 
 static void recordFix(CFStringRef countKey, CFStringRef lastKey, NSString *what) {
     if (!gCountFixes) return;
-    fprintf(stderr, "mickeeperd: %s\n", what.UTF8String);
+    DIAG(@"%@", what);
     if (!gPendingCounts) {
         gPendingCounts = [NSMutableDictionary dictionary];
         gPendingLast = [NSMutableDictionary dictionary];
@@ -346,7 +347,7 @@ static void unregisterLoginItem(void) {
     for (NSString *plist in @[UPDATER_PLIST, AGENT_PLIST]) {
         NSError *error = nil;
         if (![[NSClassFromString(@"SMAppService") agentServiceWithPlistName:plist] unregisterAndReturnError:&error])
-            fprintf(stderr, "mickeeperd: could not remove %s: %s\n", plist.UTF8String, error.localizedDescription.UTF8String);
+            DIAG(@"could not remove %@: %@ %ld", plist, error.domain, (long)error.code);
     }
 }
 
@@ -359,11 +360,11 @@ static void appMoved(void) {
         sleep(1);
         struct stat st;
         if (stat(gExecutable, &st) == 0) {
-            fprintf(stderr, "mickeeperd: MicKeeper.app was updated, restarting\n");
+            DIAG(@"MicKeeper.app was updated, restarting");
             exit(1);
         }
     }
-    fprintf(stderr, "mickeeperd: MicKeeper.app was removed, exiting\n");
+    DIAG(@"MicKeeper.app was removed, exiting");
     unregisterLoginItem();  // launchd may stop us right here
     exit(0);
 }
@@ -405,6 +406,12 @@ int main(int argc, char **argv) {
             return 0;
         }
 
+#ifdef MICKEEPER_DIAGNOSTIC_LOG
+        if (argc > 1 && !strcmp(argv[1], "--log")) return diagnosticPrint();
+        DIAG(@"agent start");
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDistributedCenter(), NULL, diagnosticRequested,
+                                        LOG_REQUEST, NULL, CFNotificationSuspensionBehaviorDeliverImmediately);
+#endif
         loadSettings();
         watchAppBundle();
         CFNotificationCenterAddObserver(CFNotificationCenterGetDistributedCenter(), NULL, settingsChanged,
