@@ -1,5 +1,6 @@
 // Exercise notification behavior without requesting permission or posting to the system notification center.
 import AppKit
+import ServiceManagement
 import UserNotifications
 
 private let testError = NSError(domain: "NotificationTests", code: 7)
@@ -33,6 +34,28 @@ enum NotificationTests {
     @MainActor
     static func main() throws {
         precondition(NSApp == nil)
+        let registrationCases: [(String?, Bool, SMAppService.Status, SMAppService.Status, ReregistrationAction)] = [
+            ("current", true, .notRegistered, .enabled, .runSequence),
+            ("current", true, .notFound, .notFound, .runSequence),
+            ("old", true, .notRegistered, .notRegistered, .runSequence),
+            (nil, true, .requiresApproval, .enabled, .runSequence),
+            ("current", true, .enabled, .enabled, .runSequence),
+            ("current", false, .enabled, .enabled, .none),
+            ("current", false, .requiresApproval, .requiresApproval, .none),
+            ("current", false, .notRegistered, .enabled, .none),
+            ("old", false, .enabled, .enabled, .runSequence),
+            (nil, false, .requiresApproval, .enabled, .runSequence),
+            ("old", false, .notRegistered, .enabled, .storeBuildID),
+            (nil, false, .notFound, .enabled, .storeBuildID),
+            ("current", false, .enabled, .notRegistered, .runSequence),
+            ("current", false, .requiresApproval, .notFound, .runSequence),
+            ("current", false, .notRegistered, .notFound, .storeBuildID),
+        ]
+        for (storedBuildID, pending, agentStatus, updaterStatus, expected) in registrationCases {
+            precondition(reregistrationAction(storedBuildID: storedBuildID, currentBuildID: "current",
+                pending: pending, agentStatus: agentStatus, updaterStatus: updaterStatus) == expected,
+                "Unexpected re-registration decision")
+        }
         let installed = ["--notify-update", "1.2.3", "--installed"]
         let available = ["--notify-update", "1.2.3", "--available"]
         for version in ["", "v1.2.3", "1..2", ".1", "1.", "1.2.3.4", "-1", "1-beta", "1/2", "1. 2", "\u{0661}"] {
@@ -102,5 +125,6 @@ enum NotificationTests {
         precondition(NSApp == nil)
         print("Passed notification checks: arguments, permission states, content, errors, "
             + "bounded callbacks and no NSApplication.")
+        print("Passed re-registration checks: interrupted sequences, build IDs, agent and updater states.")
     }
 }

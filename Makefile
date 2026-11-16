@@ -89,6 +89,7 @@ release-app:
 	@if [ -z "$(RELEASE_IDENTITY)" ]; then echo "Set RELEASE_IDENTITY (see the Makefile)."; exit 1; fi
 	rm -rf $(RELEASE_DIR)
 	$(MAKE) BUILD=$(RELEASE_DIR) SIGN_IDENTITY="$(RELEASE_IDENTITY)" TIMESTAMP=--timestamp DIAGNOSTIC_LOG=0 AGENT_DIAGNOSTIC_FLAGS=
+	sh Tests/release-logging.sh $(RELEASE_DIR)/MicKeeper.app/Contents/MacOS/*
 
 # Disk image only, without notarization: for checking the window layout.
 dmg: release-app
@@ -110,10 +111,11 @@ clean:
 	rm -rf .build
 
 # Tests use private fixtures and do not access the network or register login items.
-test: $(BUILD)/updater-tests $(BUILD)/updater-tool-tests $(BUILD)/notification-tests $(BUILD)/mickeeperd-diagnostic-check $(BUILD)/diagnostic-tests release-logging-test
+test: $(BUILD)/updater-tests $(BUILD)/updater-tool-tests $(BUILD)/notification-tests $(BUILD)/level-tests $(BUILD)/mickeeperd-diagnostic-check $(BUILD)/diagnostic-tests release-logging-test
 	$(BUILD)/updater-tests
 	$(BUILD)/updater-tool-tests
 	$(BUILD)/notification-tests
+	$(BUILD)/level-tests
 	$(BUILD)/diagnostic-tests
 
 # Build a separate release copy without installing it or using a signing certificate.
@@ -128,6 +130,10 @@ $(BUILD)/mickeeperd-diagnostic-check: $(AGENT_SRC) $(AGENT_HEADERS)
 $(BUILD)/diagnostic-tests: Sources/Agent/DiagnosticLog.h Tests/diagnostic.m
 	mkdir -p $(BUILD)
 	clang $(CFLAGS) -DMICKEEPER_DIAGNOSTIC_LOG -framework Foundation Tests/diagnostic.m -o $@
+
+$(BUILD)/level-tests: $(AGENT_SRC) $(AGENT_HEADERS) Tests/level.m
+	mkdir -p $(BUILD)
+	clang $(CFLAGS) -framework Foundation -framework CoreAudio -framework Security Tests/level.m Sources/Agent/Updater.m -o $@
 
 # Updater policy checks use only private fixture folders and never call the network entry point.
 $(BUILD)/updater-tests: Sources/Agent/Updater.m Sources/Agent/Updater.h Tests/updater.m

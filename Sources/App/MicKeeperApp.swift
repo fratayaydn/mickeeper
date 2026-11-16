@@ -97,7 +97,21 @@ let hiFiCountKey = "HiFiCount", hiFiLastKey = "HiFiLast"
 let iPhoneCountKey = "ContinuityCount", iPhoneLastKey = "ContinuityLast"
 let levelCountKey = "LevelCount", levelLastKey = "LevelLast"
 let registeredBuildKey = "RegisteredBuildID"
+let reregistrationPendingKey = "ReregistrationPending"
 let currentBuildID = Bundle.main.object(forInfoDictionaryKey: "MKBuildID") as? String ?? ""
+
+enum ReregistrationAction {
+    case none, storeBuildID, runSequence
+}
+
+func reregistrationAction(storedBuildID: String?, currentBuildID: String, pending: Bool,
+                          agentStatus: SMAppService.Status, updaterStatus: SMAppService.Status) -> ReregistrationAction {
+    if pending { return .runSequence }
+    guard storedBuildID != currentBuildID || updaterStatus == .notRegistered || updaterStatus == .notFound else {
+        return .none
+    }
+    return agentStatus == .enabled || agentStatus == .requiresApproval ? .runSequence : .storeBuildID
+}
 
 // MARK: - Audio devices
 
@@ -270,12 +284,12 @@ final class Model: ObservableObject {
     func readSettings() {
         preferredUID = defaults.string(forKey: preferredKey)
         lockLevel = defaults.bool(forKey: lockLevelKey)
-        lockedLevels = defaults.dictionary(forKey: lockedLevelsKey) as? [String: Double] ?? [:]
     }
 
     func readAgentState() {
         agentStatus = agent.status
         defaults.synchronize()
+        lockedLevels = defaults.dictionary(forKey: lockedLevelsKey) as? [String: Double] ?? [:]
         automaticUpdates = defaults.object(forKey: "AutomaticallyInstallUpdates") == nil
             || defaults.bool(forKey: "AutomaticallyInstallUpdates")
         latestVersion = defaults.string(forKey: "LatestVersion")
@@ -315,7 +329,8 @@ final class Model: ObservableObject {
 
     func setLockLevel(_ on: Bool) {
         // Locking starts from the level the microphone has now.
-        if on, let uid = Audio.uid(input), lockedLevels[uid] == nil, let level = inputLevel {
+        let device = on ? Audio.defaultInput() : kAudioObjectUnknown
+        if on, let uid = Audio.uid(device), let level = Audio.level(device) {
             lockedLevels[uid] = level
             defaults.set(lockedLevels, forKey: lockedLevelsKey)
         }
@@ -335,6 +350,8 @@ final class Model: ObservableObject {
     var isEnabled: Bool { agentStatus == .enabled || agentStatus == .requiresApproval }
 
     func setEnabled(_ on: Bool) {
+        defaults.removeObject(forKey: reregistrationPendingKey)
+        defaults.synchronize()
         do {
             try setLoginItemsEnabled(on)
         } catch {
@@ -402,13 +419,26 @@ final class Model: ObservableObject {
     /// is part of the launch constraint), so after an update it is registered again, if it was enabled.
     private func reregisterAfterUpdate() {
         let updater = SMAppService.agent(plistName: updaterPlistName)
-        guard defaults.string(forKey: registeredBuildKey) != currentBuildID
-            || updater.status == .notRegistered || updater.status == .notFound else { return }
-        defaults.set(currentBuildID, forKey: registeredBuildKey)
-        guard agent.status == .enabled || agent.status == .requiresApproval else { return }
-        DispatchQueue.global().async { [weak self] in
+        switch reregistrationAction(storedBuildID: defaults.string(forKey: registeredBuildKey),
+            currentBuildID: currentBuildID, pending: defaults.bool(forKey: reregistrationPendingKey),
+            agentStatus: agent.status, updaterStatus: updater.status) {
+        case .none:
+            return
+        case .storeBuildID:
+            defaults.set(currentBuildID, forKey: registeredBuildKey)
+            return
+        case .runSequence:
+            break
+        }
+        // Preserve the enabled intent if the app exits after unregistering.
+        defaults.set(true, forKey: reregistrationPendingKey)
+        defaults.synchronize()
+        DispatchQueue.global().async { [weak self, defaults] in
             reregisterAgent()
             if !agentIsRunning() { reregisterAgent() }  // right after an update the first pass may not take
+            defaults.set(currentBuildID, forKey: registeredBuildKey)
+            defaults.removeObject(forKey: reregistrationPendingKey)
+            defaults.synchronize()
             DispatchQueue.main.async { self?.readAgentState() }
         }
     }
@@ -496,7 +526,7 @@ struct ContentView: View {
                     Button(model.checkingUpdates ? "Checking..." : "Check Now") { model.checkUpdates() }
                         .disabled(model.checkingUpdates)
                 }
-                if !model.automaticUpdates, let version = model.availableVersion {
+                if let version = model.availableVersion {
                     Button("Install \(version)") { model.checkUpdates(install: true) }
                         .disabled(model.checkingUpdates)
                 }
@@ -614,7 +644,10 @@ func agentIsRunning() -> Bool { launchctl(["print", agentJob]).contains("state =
 func reregisterAgent() {
     try? setLoginItemsEnabled(false)
     for job in [updaterJob, agentJob] {
-        for _ in 0..<70 where !launchctl(["print", job]).isEmpty { Thread.sleep(forTimeInterval: 0.5) }
+        for _ in 0..<70 {
+            if launchctl(["print", job]).isEmpty { break }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
     }
     Thread.sleep(forTimeInterval: 1)
     try? setLoginItemsEnabled(true)
@@ -635,6 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 startAgentOnce()
                 // This build is registered now; the window must not re-register it again (see reregisterAfterUpdate).
                 UserDefaults.standard.set(currentBuildID, forKey: registeredBuildKey)
+                UserDefaults.standard.removeObject(forKey: reregistrationPendingKey)
                 UserDefaults.standard.synchronize()  // exit() would otherwise drop the unsaved value
                 exit(0)
             } catch {

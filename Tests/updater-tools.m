@@ -2,8 +2,38 @@
 #include <assert.h>
 #import "../Sources/Agent/Updater.m"
 
+static void notifications(void) {
+    NSString *directory = [NSFileManager.defaultManager.currentDirectoryPath
+        stringByAppendingPathComponent:[@".build/notifier-" stringByAppendingString:NSUUID.UUID.UUIDString]];
+    assert([NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:NULL]);
+    NSString *notifier = [directory stringByAppendingPathComponent:@"MicKeeper"];
+    NSString *output = [notifier stringByAppendingString:@".arguments"];
+    NSString *script = @"#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$0.arguments\"\n";
+    assert([script writeToFile:notifier atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
+    assert(chmod(notifier.fileSystemRepresentation, 0700) == 0);
+    for (NSNumber *automatic in @[@NO, @YES]) {
+        for (NSNumber *success in @[@NO, @YES]) {
+            __block int installs = 0;
+            int result = updateAndNotify(notifier, @"1.2.3", automatic.boolValue, ^{
+                installs++;
+                return success.boolValue;
+            });
+            BOOL failed = automatic.boolValue && !success.boolValue;
+            assert(result == (failed ? 1 : 0));
+            assert(installs == (automatic.boolValue ? 1 : 0));
+            NSString *arguments = [NSString stringWithContentsOfFile:output encoding:NSUTF8StringEncoding error:NULL];
+            NSString *expected = automatic.boolValue && success.boolValue ? @"--installed" : @"--available";
+            assert(([arguments isEqual:[NSString stringWithFormat:@"--notify-update\n1.2.3\n%@\n", expected]]));
+            assert([NSFileManager.defaultManager removeItemAtPath:output error:NULL]);
+        }
+    }
+    assert([NSFileManager.defaultManager removeItemAtPath:directory error:NULL]);
+    puts("Passed updater notification checks: manual availability, automatic success and automatic failure.");
+}
+
 int main(void) {
     @autoreleasepool {
+        notifications();
         assert(runTool(@"/usr/bin/true", @[], 2));
         assert(!runTool(@"/usr/bin/false", @[], 2));
         assert(runTool(@"/bin/test", @[@"two words", @"=", @"two words"], 2));

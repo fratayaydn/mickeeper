@@ -258,7 +258,7 @@ static AudioDeviceID replacementMic(void) {
 
 static void lockedLevelChanged(UInt32 n, const AudioObjectPropertyAddress *a);
 
-// Follow the default input's level, and bring it to its locked value if there is one.
+// Follow the default input's level, and bring it to its locked value.
 static void watchLevel(AudioDeviceID d) {
     if (gWatched != kAudioObjectUnknown && gWatched != d) {
         for (NSNumber *el in gWatchedElements) {
@@ -278,12 +278,25 @@ static void watchLevel(AudioDeviceID d) {
     lockedLevelChanged(0, NULL);
 }
 
+static NSNumber *levelToLock(id saved, Float32 current) {
+    return [saved isKindOfClass:[NSNumber class]] ? saved : @(current);
+}
+
 // The level changed (or the settings did): put it back if it is locked.
 static void lockedLevelChanged(UInt32 n, const AudioObjectPropertyAddress *a) {
-    if (!gLockLevel || gWatched == kAudioObjectUnknown) return;
-    NSNumber *locked = gLockedLevels[gWatchedUID ?: @""];
+    if (!gLockLevel || gWatched == kAudioObjectUnknown || !gWatchedUID) return;
+    id saved = gLockedLevels[gWatchedUID];
     Float32 current;
-    if (![locked isKindOfClass:[NSNumber class]] || !getLevelOf(gWatched, gWatchedElements, &current)) return;
+    if (!getLevelOf(gWatched, gWatchedElements, &current)) return;
+    NSNumber *locked = levelToLock(saved, current);
+    if (locked != saved) {
+        NSMutableDictionary *levels = [gLockedLevels mutableCopy];
+        levels[gWatchedUID] = locked;
+        gLockedLevels = levels;
+        setPref(KEY_LOCKED_LEVELS, levels);
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDistributedCenter(), STATUS_CHANGED_NOTIFICATION, NULL, NULL, true);
+        return;
+    }
     if (fabsf(current - locked.floatValue) < 0.005f) return;
     setLevelOf(gWatched, gWatchedElements, locked.floatValue);
     recordFix(KEY_LEVEL_COUNT, KEY_LEVEL_LAST,
