@@ -303,28 +303,29 @@ static void lockedLevelChanged(UInt32 n, const AudioObjectPropertyAddress *a) {
               [NSString stringWithFormat:@"%@: level %.2f -> %.2f", deviceName(gWatched), current, locked.floatValue]);
 }
 
+static CFStringRef inputFixCountKey(BOOL headset, BOOL iPhone) {
+    return headset ? KEY_HIFI_COUNT : iPhone ? KEY_IPHONE_COUNT : NULL;
+}
+
 static void defaultInputChanged(void) {
     AudioDeviceID d = defaultInput();
     AudioDeviceID chosen = chosenMic();
-    if (chosen) {
-        if (d != chosen) {
-            setDefaultInput(chosen);  // reported back as another default input change
-            return;
-        }
+    if (chosen && d == chosen) {
         watchLevel(d);
         return;
     }
     BOOL headset = isHeadset(d), iPhone = isContinuity(d);
-    if (headset || iPhone) {
-        AudioDeviceID mic = replacementMic();
-        if (mic) {
-            setDefaultInput(mic);  // reported back as another default input change
+    AudioDeviceID mic = chosen;
+    if (!mic && (headset || iPhone)) mic = replacementMic();
+    if (mic) {
+        setDefaultInput(mic);  // reported back as another default input change
+        CFStringRef countKey = inputFixCountKey(headset, iPhone);
+        if (countKey) {
             NSString *what = [NSString stringWithFormat:@"input %@ -> %@ (%@)", deviceName(d), deviceName(mic),
                               headset ? @"headphones stay hi-fi" : @"iPhone kept off the microphone"];
-            if (headset) recordFix(KEY_HIFI_COUNT, KEY_HIFI_LAST, what);
-            else recordFix(KEY_IPHONE_COUNT, KEY_IPHONE_LAST, what);
-            return;
+            recordFix(countKey, headset ? KEY_HIFI_LAST : KEY_IPHONE_LAST, what);
         }
+        return;
     }
     if (isRealMic(d)) {
         NSString *uid = deviceUID(d);
@@ -364,18 +365,48 @@ static void unregisterLoginItem(void) {
     }
 }
 
-// MicKeeper.app was moved to the Trash or replaced by an update. An update puts a new copy at the same path within
-// moments: exit with an error so launchd starts the new agent. Otherwise the app is gone: remove the login item and
-// exit for good (a successful exit is not restarted).
+typedef NS_ENUM(NSUInteger, AppMoveAction) {
+    AppMoveRestart,
+    AppMoveKeepRunning,
+    AppMoveRemoveAndExit
+};
+
+static AppMoveAction appMoveAction(BOOL oldPathRestored, NSString *currentBundlePath) {
+    if (oldPathRestored) return AppMoveRestart;
+    if (!currentBundlePath) return AppMoveRemoveAndExit;
+    for (NSString *component in currentBundlePath.pathComponents)
+        if ([component isEqualToString:@".Trash"] || [component isEqualToString:@".Trashes"]) return AppMoveRemoveAndExit;
+    return AppMoveKeepRunning;
+}
+
+// An update restores the old path within moments: restart so launchd starts the new agent. A move keeps the
+// descriptor watch on the same bundle. Only removal or a move to the Trash removes the login items.
 static void appMoved(void) {
-    dispatch_source_cancel(gBundleWatch);
+    BOOL restored = NO;
     for (int i = 0; i < 10; i++) {
         sleep(1);
         struct stat st;
         if (stat(gExecutable, &st) == 0) {
-            DIAG(@"MicKeeper.app was updated, restarting");
-            exit(1);
+            restored = YES;
+            break;
         }
+    }
+    char path[PATH_MAX];
+    struct stat st;
+    NSString *currentBundlePath = nil;
+    if (!restored && fcntl((int)dispatch_source_get_handle(gBundleWatch), F_GETPATH, path) == 0
+        && stat(path, &st) == 0 && S_ISDIR(st.st_mode))
+        currentBundlePath = [NSString stringWithUTF8String:path];
+    AppMoveAction action = appMoveAction(restored, currentBundlePath);
+    if (action == AppMoveKeepRunning) {
+        NSString *executable = [currentBundlePath stringByAppendingPathComponent:@"Contents/MacOS/mickeeperd"];
+        strlcpy(gExecutable, executable.fileSystemRepresentation, sizeof(gExecutable));
+        return;
+    }
+    dispatch_source_cancel(gBundleWatch);
+    if (action == AppMoveRestart) {
+        DIAG(@"MicKeeper.app was updated, restarting");
+        exit(1);
     }
     DIAG(@"MicKeeper.app was removed, exiting");
     unregisterLoginItem();  // launchd may stop us right here

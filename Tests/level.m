@@ -1,4 +1,4 @@
-// Exercise level selection without accessing audio devices or saved preferences.
+// Exercise agent decisions without accessing audio devices or saved preferences.
 #include <assert.h>
 #define main agentMain
 #import "../Sources/Agent/mickeeperd.m"
@@ -14,6 +14,26 @@ int main(void) {
         assert([levelToLock(nil, 1) isEqual:@1]);
         assert([levelToLock(@"invalid", 0.5f) isEqual:@0.5f]);
         puts("Passed level lock checks: saved levels, new microphones and zero and full levels.");
+
+        assert(appMoveAction(YES, nil) == AppMoveRestart);
+        assert(appMoveAction(YES, @"/Users/test/.Trash/MicKeeper.app") == AppMoveRestart);
+        assert(appMoveAction(YES, @"/Applications/Utilities/MicKeeper.app") == AppMoveRestart);
+        assert(appMoveAction(NO, @"/Applications/Utilities/MicKeeper.app") == AppMoveKeepRunning);
+        assert(appMoveAction(NO, @"/Applications/Renamed.app") == AppMoveKeepRunning);
+        assert(appMoveAction(NO, @"/Users/test/.Trash/MicKeeper.app") == AppMoveRemoveAndExit);
+        assert(appMoveAction(NO, @"/Volumes/External/.Trashes/501/MicKeeper.app") == AppMoveRemoveAndExit);
+        assert(appMoveAction(NO, @"/Users/test/.Trash/Folder/MicKeeper.app") == AppMoveRemoveAndExit);
+        assert(appMoveAction(NO, @"/Applications/.Trashcan/MicKeeper.app") == AppMoveKeepRunning);
+        assert(appMoveAction(NO, @"/Applications/.Trashes-backup/MicKeeper.app") == AppMoveKeepRunning);
+        assert(appMoveAction(NO, @"/Applications/MicKeeper.Trash.app") == AppMoveKeepRunning);
+        assert(appMoveAction(NO, nil) == AppMoveRemoveAndExit);
+        puts("Passed app move checks: updates, moves, renames, Trash components and unresolved paths.");
+
+        assert(CFEqual(inputFixCountKey(YES, NO), KEY_HIFI_COUNT));
+        assert(CFEqual(inputFixCountKey(NO, YES), KEY_IPHONE_COUNT));
+        assert(CFEqual(inputFixCountKey(YES, YES), KEY_HIFI_COUNT));
+        assert(inputFixCountKey(NO, NO) == NULL);
+        puts("Passed input fix checks: headset and iPhone counters, headset priority and other devices.");
     }
     return 0;
 }
