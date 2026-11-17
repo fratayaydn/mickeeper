@@ -316,10 +316,10 @@ static BOOL installRelease(NSURLSession *session, NSDictionary *release, NSStrin
     return success && clean;
 }
 
-static int updateAndNotify(NSString *notifier, NSString *version, BOOL automatic, BOOL (^install)(void)) {
+static int updateAndNotify(NSString *notifier, NSString *version, BOOL automatic, BOOL force, BOOL requestedInstall, BOOL (^install)(void)) {
     BOOL installed = automatic && install();
     // Run the executable at the installed path after the swap, so the new app sends the notification.
-    runTool(notifier, @[@"--notify-update", version, installed ? @"--installed" : @"--available"], 60);
+    if (!force && !requestedInstall) runTool(notifier, @[@"--notify-update", version, installed ? @"--installed" : @"--available"], 60);
     return automatic && !installed ? 1 : 0;
 }
 
@@ -375,7 +375,7 @@ int updaterRun(BOOL force, BOOL install) {
         }
         BOOL automatic = install || preferenceEnabled(@"AutomaticallyInstallUpdates");
         NSString *notifier = [installed URLByAppendingPathComponent:@"Contents/MacOS/MicKeeper"].path;
-        return updateAndNotify(notifier, version, automatic, ^{
+        return updateAndNotify(notifier, version, automatic, force, install, ^{
             return installRelease(session, release, version, current, installed);
         });
     } @finally {
