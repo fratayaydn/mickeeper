@@ -33,24 +33,25 @@ or level change. Over 60 seconds idle, the kernel's own counters showed it ran n
 Measured on macOS 26.7.1: memory with `footprint`, CPU and wakeups with the kernel's `proc_pid_rusage` counters.
 
 A separate updater runs briefly each day and at login, then exits. It checks only if about 20 hours have passed
-since the last check or macOS was updated. Scheduled checks stop while MicKeeper is turned off.
+since the last check or macOS was updated. Scheduled checks stop while MicKeeper is turned off or automatic
+installs are off.
 
 There is no menu bar icon, and the settings window only runs while it's open. MicKeeper never listens to
 the microphone. It only changes which one is selected, and its level.
 
 ## Updates
 
-MicKeeper asks GitHub for the latest release each day and at login, if about 20 hours have passed since the last
-check or macOS was updated, and installs it if it's newer. An update is only installed when it's signed with the
+By default, MicKeeper asks GitHub for the latest release each day and at login, if about 20 hours have passed since
+the last check or macOS was updated, and installs it if it's newer. An update is only installed when it's signed with the
 same Developer ID and notarized by Apple. The disk image is checked before it's opened, and the app inside is
 checked again before it replaces the old one. The check
 also runs at the first login after a macOS update, in case a fix for that version is already out.
 
 The check is one request to `api.github.com` that sends only the app name and version. macOS asks once whether
 MicKeeper may show a notification after an update; you can change that later in **System Settings >
-Notifications**. Turn off **Install updates automatically** to get a notification instead and install from the
-window. Homebrew installs update themselves too. The cask is marked as auto-updating, so `brew upgrade` skips it
-unless you add `--greedy`.
+Notifications**. With **Install updates automatically** off, MicKeeper does not check by itself. Click **Check Now**
+in the window to check, and install from there. Homebrew installs follow the same settings. The cask is marked as
+auto-updating, so `brew upgrade` skips it unless you add `--greedy`.
 
 ## Good to know
 

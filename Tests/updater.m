@@ -22,21 +22,29 @@ static void versions(void) {
 
 static void scheduling(void) {
     NSDate *now = [NSDate dateWithTimeIntervalSince1970:1000000];
-    assert(updaterCheckDue(nil, now, @"25A1", @"25A1", YES, NO));
-    assert(updaterCheckDue(@"invalid", now, @"25A1", @"25A1", YES, NO));
-    assert(!updaterCheckDue(now, now, @"25A1", @"25A1", YES, NO));
-    assert(!updaterCheckDue([now dateByAddingTimeInterval:1], now, @"25A1", @"25A1", YES, NO));
-    assert(!updaterCheckDue([now dateByAddingTimeInterval:-(20 * 3600 - 1)], now, @"25A1", @"25A1", YES, NO));
-    assert(updaterCheckDue([now dateByAddingTimeInterval:-20 * 3600], now, @"25A1", @"25A1", YES, NO));
-    assert(updaterCheckDue([now dateByAddingTimeInterval:-21 * 3600], now, @"25A1", @"25A1", YES, NO));
-    assert(updaterCheckDue(now, now, @"25A1", @"25A1", YES, YES));
-    assert(updaterCheckDue(now, now, @"25A1", @"25B2", YES, NO));
-    assert(updaterCheckDue(now, now, nil, @"25B2", YES, NO));
-    assert(!updaterCheckDue(nil, now, nil, @"25B2", NO, NO));
-    assert(!updaterCheckDue(nil, now, nil, @"25B2", NO, YES));
-    assert(!updaterCheckDue(now, now, @"25A1", @"25A1", NO, NO));
-    assert(!updaterCheckDue(now, now, @"25A1", @"25B2", NO, NO));
-    assert(!updaterCheckDue(now, now, @"25A1", @"25B2", NO, YES));
+    assert(updaterCheckDue(nil, now, @"25A1", @"25A1", YES, YES, NO));
+    assert(updaterCheckDue(@"invalid", now, @"25A1", @"25A1", YES, YES, NO));
+    assert(!updaterCheckDue(now, now, @"25A1", @"25A1", YES, YES, NO));
+    assert(!updaterCheckDue([now dateByAddingTimeInterval:1], now, @"25A1", @"25A1", YES, YES, NO));
+    assert(!updaterCheckDue([now dateByAddingTimeInterval:-(20 * 3600 - 1)], now, @"25A1", @"25A1", YES, YES, NO));
+    assert(updaterCheckDue([now dateByAddingTimeInterval:-20 * 3600], now, @"25A1", @"25A1", YES, YES, NO));
+    assert(updaterCheckDue([now dateByAddingTimeInterval:-21 * 3600], now, @"25A1", @"25A1", YES, YES, NO));
+    assert(updaterCheckDue(now, now, @"25A1", @"25A1", YES, YES, YES));
+    assert(updaterCheckDue(now, now, @"25A1", @"25B2", YES, YES, NO));
+    assert(updaterCheckDue(now, now, nil, @"25B2", YES, YES, NO));
+    assert(!updaterCheckDue(nil, now, nil, @"25B2", NO, YES, NO));
+    assert(!updaterCheckDue(nil, now, nil, @"25B2", NO, YES, YES));
+    assert(!updaterCheckDue(now, now, @"25A1", @"25A1", NO, YES, NO));
+    assert(!updaterCheckDue(now, now, @"25A1", @"25B2", NO, YES, NO));
+    assert(!updaterCheckDue(now, now, @"25A1", @"25B2", NO, YES, YES));
+    for (id lastCheck in @[NSNull.null, @"invalid", now, [now dateByAddingTimeInterval:1],
+                           [now dateByAddingTimeInterval:-21 * 3600]]) {
+        assert(!updaterCheckDue(lastCheck, now, @"25A1", @"25A1", YES, NO, NO));
+        assert(!updaterCheckDue(lastCheck, now, @"25A1", @"25B2", YES, NO, NO));
+        assert(updaterCheckDue(lastCheck, now, @"25A1", @"25A1", YES, NO, YES));
+    }
+    assert(!updaterCheckDue(nil, now, nil, @"25B2", YES, NO, NO));
+    assert(updaterCheckDue(nil, now, nil, @"25B2", YES, NO, YES));
 }
 
 static void assetSizes(void) {
@@ -59,7 +67,7 @@ int main(void) {
         SecRequirementRef compiled = NULL;
         assert(SecRequirementCreateWithString((__bridge CFStringRef)requirement, kSecCSDefaultFlags, &compiled) == errSecSuccess);
         CFRelease(compiled);
-        puts("Passed updater checks: numeric versions, 20 hour and OS build scheduling, asset name, size limits and notarized developer requirement; no network access.");
+        puts("Passed updater checks: numeric versions, automatic check policy, 20 hour and OS build scheduling, asset name, size limits and notarized developer requirement; no network access.");
     }
     return 0;
 }

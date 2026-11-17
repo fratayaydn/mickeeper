@@ -34,6 +34,11 @@ enum NotificationTests {
     @MainActor
     static func main() throws {
         precondition(NSApp == nil)
+        let relaunchCases: [(String?, Bool)] = [(nil, false), ("1.2.3", false), ("1.2.4", true), ("1.2.2", true)]
+        for (diskVersion, expected) in relaunchCases {
+            precondition(shouldRelaunchAfterUpdate(runningVersion: "1.2.3", diskVersion: diskVersion) == expected,
+                "Unexpected update relaunch decision")
+        }
         let registrationCases: [(String?, Bool, SMAppService.Status, SMAppService.Status, ReregistrationAction)] = [
             ("current", true, .notRegistered, .enabled, .runSequence),
             ("current", true, .notFound, .notFound, .runSequence),
@@ -126,5 +131,6 @@ enum NotificationTests {
         print("Passed notification checks: arguments, permission states, content, errors, "
             + "bounded callbacks and no NSApplication.")
         print("Passed re-registration checks: interrupted sequences, build IDs, agent and updater states.")
+        print("Passed update relaunch checks: missing, equal and different disk versions.")
     }
 }
