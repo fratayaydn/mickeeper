@@ -282,6 +282,12 @@ static NSNumber *levelToLock(id saved, Float32 current) {
     return [saved isKindOfClass:[NSNumber class]] ? saved : @(current);
 }
 
+static BOOL levelsNeedRestore(NSArray *levels, Float32 locked) {
+    for (id level in levels)
+        if ([level isKindOfClass:[NSNumber class]] && fabsf([level floatValue] - locked) >= 0.005f) return YES;
+    return NO;
+}
+
 // The level changed (or the settings did): put it back if it is locked.
 static void lockedLevelChanged(UInt32 n, const AudioObjectPropertyAddress *a) {
     if (!gLockLevel || gWatched == kAudioObjectUnknown || !gWatchedUID) return;
@@ -297,7 +303,14 @@ static void lockedLevelChanged(UInt32 n, const AudioObjectPropertyAddress *a) {
         CFNotificationCenterPostNotification(CFNotificationCenterGetDistributedCenter(), STATUS_CHANGED_NOTIFICATION, NULL, NULL, true);
         return;
     }
-    if (fabsf(current - locked.floatValue) < 0.005f) return;
+    NSMutableArray *levels = [NSMutableArray array];
+    for (NSNumber *el in gWatchedElements) {
+        Float32 level;
+        AudioObjectPropertyAddress a = addr(kAudioDevicePropertyVolumeScalar, kAudioDevicePropertyScopeInput, el.unsignedIntValue);
+        UInt32 sz = sizeof(level);
+        [levels addObject:AudioObjectGetPropertyData(gWatched, &a, 0, NULL, &sz, &level) == noErr ? @(level) : [NSNull null]];
+    }
+    if (!levelsNeedRestore(levels, locked.floatValue)) return;
     setLevelOf(gWatched, gWatchedElements, locked.floatValue);
     recordFix(KEY_LEVEL_COUNT, KEY_LEVEL_LAST,
               [NSString stringWithFormat:@"%@: level %.2f -> %.2f", deviceName(gWatched), current, locked.floatValue]);
@@ -311,6 +324,10 @@ static void defaultInputChanged(void) {
     AudioDeviceID d = defaultInput();
     AudioDeviceID chosen = chosenMic();
     if (chosen && d == chosen) {
+        if (isRealMic(d)) {
+            NSString *uid = deviceUID(d);
+            if (uid) setPref(KEY_LAST_INPUT, uid);
+        }
         watchLevel(d);
         return;
     }
@@ -469,6 +486,10 @@ int main(int argc, char **argv) {
         AudioObjectPropertyAddress devices = addr(kAudioHardwarePropertyDevices, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain);
         AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &devices, dispatch_get_main_queue(),
             ^(UInt32 n, const AudioObjectPropertyAddress *a) { defaultInputChanged(); });
+        // launchd restarts the agent after an unsuccessful exit to rebuild its listeners.
+        AudioObjectPropertyAddress restarted = addr(kAudioHardwarePropertyServiceRestarted, kAudioObjectPropertyScopeGlobal, kAudioObjectPropertyElementMain);
+        AudioObjectAddPropertyListenerBlock(kAudioObjectSystemObject, &restarted, dispatch_get_main_queue(),
+            ^(UInt32 n, const AudioObjectPropertyAddress *a) { DIAG(@"audio service restarted"); exit(1); });
 
         defaultInputChanged();
         CFRunLoopRun();  // also serves the main queue (CoreAudio listeners) and distributed notifications

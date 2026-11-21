@@ -13,7 +13,14 @@ int main(void) {
         assert([levelToLock(nil, 0) isEqual:@0]);
         assert([levelToLock(nil, 1) isEqual:@1]);
         assert([levelToLock(@"invalid", 0.5f) isEqual:@0.5f]);
-        puts("Passed level lock checks: saved levels, new microphones and zero and full levels.");
+        assert(!levelsNeedRestore(@[@0.5f, @0.5f], 0.5f));
+        assert(!levelsNeedRestore(@[@0.5f, @0.504f], 0.5f));
+        assert(levelsNeedRestore(@[@0.5f, @0.75f], 0.5f));
+        assert(levelsNeedRestore(@[@0.005f], 0));
+        assert(!levelsNeedRestore(@[[NSNull null], @0.5f], 0.5f));
+        assert(!levelsNeedRestore(@[[NSNull null]], 0.5f));
+        assert(levelsNeedRestore(@[[NSNull null], @0.75f], 0.5f));
+        puts("Passed level lock checks: saved levels, new microphones, channel changes and unreadable channels.");
 
         assert(appMoveAction(YES, nil) == AppMoveRestart);
         assert(appMoveAction(YES, @"/Users/test/.Trash/MicKeeper.app") == AppMoveRestart);
