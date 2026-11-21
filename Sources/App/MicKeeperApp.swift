@@ -264,6 +264,7 @@ final class Model: ObservableObject {
     @Published var checkingUpdates = false
     @Published var latestVersion: String?
     @Published var lastUpdateCheck: Date?
+    @Published var installedVersion = "0.0.0"
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
 
     // The app's bundle identifier is the agent's preferences domain, so its standard defaults are those settings.
@@ -299,6 +300,10 @@ final class Model: ObservableObject {
             || defaults.bool(forKey: "AutomaticallyInstallUpdates")
         latestVersion = defaults.string(forKey: "LatestVersion")
         lastUpdateCheck = defaults.object(forKey: "LastUpdateCheck") as? Date
+        let data = try? Data(contentsOf: Bundle.main.bundleURL.appendingPathComponent("Contents/Info.plist"))
+        let info = data.flatMap { try? PropertyListSerialization.propertyList(from: $0, options: [], format: nil) }
+            as? [String: Any]
+        installedVersion = info?["CFBundleShortVersionString"] as? String ?? version
         hiFiCount = defaults.integer(forKey: hiFiCountKey)
         hiFiLast = defaults.object(forKey: hiFiLastKey) as? Date
         iPhoneCount = defaults.integer(forKey: iPhoneCountKey)
@@ -368,7 +373,7 @@ final class Model: ObservableObject {
     var availableVersion: String? {
         guard let latestVersion else { return nil }
         let latest = latestVersion.split(separator: ".").map(String.init)
-        let current = version.split(separator: ".").map(String.init)
+        let current = installedVersion.split(separator: ".").map(String.init)
         for index in 0..<3 {
             let a = index < latest.count ? latest[index] : "0"
             let b = index < current.count ? current[index] : "0"
@@ -555,7 +560,7 @@ struct ContentView: View {
                     Text("Only updates signed by the developer and notarized by Apple.")
                 }
                 HStack {
-                    Text("Version \(model.version), \(model.lastCheckedText.lowercased().replacingOccurrences(of: "checked:", with: "checked"))")
+                    Text("Version \(model.installedVersion), \(model.lastCheckedText.lowercased().replacingOccurrences(of: "checked:", with: "checked"))")
                         .lineLimit(1)
                     Spacer()
                     Button(model.checkingUpdates ? "Checking..." : "Check Now") { model.checkUpdates() }
