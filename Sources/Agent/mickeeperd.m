@@ -199,7 +199,7 @@ static void setPref(CFStringRef key, id value) {
 }
 
 // Written only when MicKeeper actually steps in, so the app can show how often that happens. An app fighting over
-// the level can trigger many corrections in a row, so they are counted in memory and saved once, 2 s after the first.
+// the level can trigger many corrections in a row, so a burst counts once and counts are saved once, 2 s after the first.
 static NSMutableDictionary<NSString *, NSNumber *> *gPendingCounts;
 static NSMutableDictionary<NSString *, NSDate *> *gPendingLast;
 
@@ -218,15 +218,25 @@ static void savePendingCounts(void) {
     CFNotificationCenterPostNotification(CFNotificationCenterGetDistributedCenter(), STATUS_CHANGED_NOTIFICATION, NULL, NULL, true);
 }
 
+static BOOL shouldCountFix(CFAbsoluteTime previous, CFAbsoluteTime now) {
+    return previous == 0 || now < previous || now - previous > 2.0;
+}
+
 static void recordFix(CFStringRef countKey, CFStringRef lastKey, NSString *what) {
     if (!gCountFixes) return;
     DIAG(@"%@", what);
+    static NSMutableDictionary<NSString *, NSNumber *> *lastCorrections;
+    if (!lastCorrections) lastCorrections = [NSMutableDictionary dictionary];
+    NSString *key = (__bridge NSString *)countKey;
+    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    BOOL countFix = shouldCountFix(lastCorrections[key].doubleValue, now);
+    lastCorrections[key] = @(now);
+    if (!countFix) return;
     if (!gPendingCounts) {
         gPendingCounts = [NSMutableDictionary dictionary];
         gPendingLast = [NSMutableDictionary dictionary];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ savePendingCounts(); });
     }
-    NSString *key = (__bridge NSString *)countKey;
     gPendingCounts[key] = @(gPendingCounts[key].longValue + 1);
     gPendingLast[(__bridge NSString *)lastKey] = [NSDate date];
 }

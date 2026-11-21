@@ -41,6 +41,13 @@ int main(void) {
         assert(CFEqual(inputFixCountKey(YES, YES), KEY_HIFI_COUNT));
         assert(inputFixCountKey(NO, NO) == NULL);
         puts("Passed input fix checks: headset and iPhone counters, headset priority and other devices.");
+
+        assert(shouldCountFix(0, 100));
+        assert(!shouldCountFix(100, 101));
+        assert(!shouldCountFix(100, 102));
+        assert(shouldCountFix(100, 102.1));
+        assert(shouldCountFix(100, 99));
+        puts("Passed correction count checks: first correction, burst interval and clock changes.");
     }
     return 0;
 }
