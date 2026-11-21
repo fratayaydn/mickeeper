@@ -462,12 +462,19 @@ final class Model: ObservableObject {
         defaults.set(true, forKey: reregistrationPendingKey)
         defaults.synchronize()
         DispatchQueue.global().async { [weak self, defaults] in
-            reregisterAgent()
-            if !agentIsRunning() { reregisterAgent() }  // right after an update the first pass may not take
-            defaults.set(currentBuildID, forKey: registeredBuildKey)
-            defaults.removeObject(forKey: reregistrationPendingKey)
-            defaults.synchronize()
-            DispatchQueue.main.async { self?.readAgentState() }
+            var success = reregisterAgent()
+            if !agentIsRunning() { success = reregisterAgent() }  // right after an update the first pass may not take
+            if success {
+                defaults.set(currentBuildID, forKey: registeredBuildKey)
+                defaults.removeObject(forKey: reregistrationPendingKey)
+                defaults.synchronize()
+            }
+            DispatchQueue.main.async {
+                if !success {
+                    self?.errorMessage = "Could not enable MicKeeper after the update. Close and reopen MicKeeper to try again."
+                }
+                self?.readAgentState()
+            }
         }
     }
 }
@@ -670,7 +677,7 @@ func agentIsRunning() -> Bool { launchctl(["print", agentJob]).contains("state =
 
 /// Unregister, wait until launchd has dropped the job, register and start once: the sequence that refreshes
 /// the agent's launch constraint after an update (see scripts/install.sh).
-func reregisterAgent() {
+func reregisterAgent() -> Bool {
     try? setLoginItemsEnabled(false)
     for job in [updaterJob, agentJob] {
         for _ in 0..<70 {
@@ -680,8 +687,11 @@ func reregisterAgent() {
     }
     Thread.sleep(forTimeInterval: 1)
     try? setLoginItemsEnabled(true)
+    let agent = SMAppService.agent(plistName: agentPlistName)
+    let success = agent.status == .enabled || agent.status == .requiresApproval
     startAgentOnce()
     Thread.sleep(forTimeInterval: 2)
+    return success
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
