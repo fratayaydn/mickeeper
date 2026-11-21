@@ -270,6 +270,7 @@ final class Model: ObservableObject {
     // The app's bundle identifier is the agent's preferences domain, so its standard defaults are those settings.
     private let defaults = UserDefaults.standard
     private let agent = SMAppService.agent(plistName: agentPlistName)
+    private var reregistering = false
     private var watchedInput = AudioDeviceID(kAudioObjectUnknown)
     private lazy var audioChanged: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.readAudio() }
 
@@ -293,7 +294,7 @@ final class Model: ObservableObject {
     }
 
     func readAgentState() {
-        agentStatus = agent.status
+        if !reregistering { agentStatus = agent.status }
         defaults.synchronize()
         lockedLevels = defaults.dictionary(forKey: lockedLevelsKey) as? [String: Double] ?? [:]
         automaticUpdates = defaults.object(forKey: "AutomaticallyInstallUpdates") == nil
@@ -360,6 +361,7 @@ final class Model: ObservableObject {
     var isEnabled: Bool { agentStatus == .enabled || agentStatus == .requiresApproval }
 
     func setEnabled(_ on: Bool) {
+        reregistering = false  // the user's choice is shown at once
         defaults.removeObject(forKey: reregistrationPendingKey)
         defaults.synchronize()
         do {
@@ -466,6 +468,8 @@ final class Model: ObservableObject {
         // Preserve the enabled intent if the app exits after unregistering.
         defaults.set(true, forKey: reregistrationPendingKey)
         defaults.synchronize()
+        agentStatus = agent.status  // shown until the sequence ends
+        reregistering = true
         DispatchQueue.global().async { [weak self, defaults] in
             var result = reregisterAgent()
             if result != .skipped && !agentIsRunning() { result = reregisterAgent() }  // right after an update the first pass may not take
@@ -478,6 +482,7 @@ final class Model: ObservableObject {
                 if result == .failed {
                     self?.errorMessage = "Could not enable MicKeeper after the update. Close and reopen MicKeeper to try again."
                 }
+                self?.reregistering = false
                 self?.readAgentState()
             }
         }
