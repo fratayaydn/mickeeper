@@ -35,6 +35,10 @@ reregister() {
     sleep 2
 }
 
+STAGING=$(mktemp -d "$(dirname "$APP")/.MicKeeper-install.XXXXXX")
+trap 'rm -rf "$STAGING"' EXIT
+cp -R "$BUILD" "$STAGING/MicKeeper.app"
+
 pkill -x MicKeeper || true
 enabled=no
 launchctl print "$JOB" >/dev/null 2>&1 && enabled=yes
@@ -44,7 +48,7 @@ if [ -x "$CLI" ]; then
 fi
 
 rm -rf "$APP"
-cp -R "$BUILD" "$APP"
+mv "$STAGING/MicKeeper.app" "$APP"
 
 if [ "$enabled" = yes ]; then
     reregister
